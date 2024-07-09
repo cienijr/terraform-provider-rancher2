@@ -50,7 +50,16 @@ func resourceRancher2NodeTemplateCreate(d *schema.ResourceData, meta interface{}
 
 	newNodeTemplate := &NodeTemplate{}
 
-	err = client.APIBaseClient.Create(managementClient.NodeTemplateType, nodeTemplate, newNodeTemplate)
+	if nodeTemplate.GenericConfig != nil {
+		genericConf := d.Get("generic_config").([]interface{})
+		nodeTemplateStr, _ := interfaceToJSON(nodeTemplate)
+		nodeTemplateMap, _ := jsonToMapInterface(nodeTemplateStr)
+		nodeTemplateMap[fieldNameForGenericConfig(genericConf)] = configForGenericConfig(genericConf)
+		err = client.APIBaseClient.Create(managementClient.NodeTemplateType, nodeTemplateMap, newNodeTemplate)
+	} else {
+		err = client.APIBaseClient.Create(managementClient.NodeTemplateType, nodeTemplate, newNodeTemplate)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -86,7 +95,7 @@ func resourceRancher2NodeTemplateRead(d *schema.ResourceData, meta interface{}) 
 
 		nodeTemplate := &NodeTemplate{}
 
-		err = client.APIBaseClient.ByID(managementClient.NodeTemplateType, d.Id(), nodeTemplate)
+		err = fetchNodeTemplate(client, d.Id(), nodeTemplate)
 		if err != nil {
 			if IsNotFound(err) || IsForbidden(err) {
 				log.Printf("[INFO] Node template ID %s not found.", d.Id())
@@ -112,7 +121,7 @@ func resourceRancher2NodeTemplateUpdate(d *schema.ResourceData, meta interface{}
 	}
 
 	nodeTemplate := &norman.Resource{}
-	err = client.APIBaseClient.ByID(managementClient.NodeTemplateType, d.Id(), nodeTemplate)
+	err = fetchNodeTemplate(client, d.Id(), nodeTemplate)
 	if err != nil {
 		return err
 	}
@@ -158,6 +167,9 @@ func resourceRancher2NodeTemplateUpdate(d *schema.ResourceData, meta interface{}
 		update["vmwarevsphereConfig"] = expandVsphereConfig(d.Get("vsphere_config").([]interface{}))
 	case outscaleConfigDriver:
 		update["outscaleConfig"] = expandOutscaleConfig(d.Get("outscale_config").([]interface{}))
+	default:
+		config := d.Get("generic_config").([]interface{})
+		update[fieldNameForGenericConfig(config)] = configForGenericConfig(config)
 	}
 
 	newNodeTemplate := &NodeTemplate{}
@@ -192,7 +204,7 @@ func resourceRancher2NodeTemplateDelete(d *schema.ResourceData, meta interface{}
 	}
 
 	nodeTemplate := &norman.Resource{}
-	err = client.APIBaseClient.ByID(managementClient.NodeTemplateType, id, nodeTemplate)
+	err = fetchNodeTemplate(client, id, nodeTemplate)
 	if err != nil {
 		if IsNotFound(err) || IsForbidden(err) {
 			log.Printf("[INFO] Node Template ID %s not found.", id)
@@ -243,7 +255,7 @@ func resourceRancher2NodeTemplateDelete(d *schema.ResourceData, meta interface{}
 func nodeTemplateStateRefreshFunc(client *managementClient.Client, nodePoolID string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
 		obj := &NodeTemplate{}
-		err := client.APIBaseClient.ByID(managementClient.NodeTemplateType, nodePoolID, obj)
+		err := fetchNodeTemplate(client, nodePoolID, obj)
 		if err != nil {
 			if IsNotFound(err) || IsForbidden(err) {
 				return obj, "removed", nil
@@ -253,4 +265,33 @@ func nodeTemplateStateRefreshFunc(client *managementClient.Client, nodePoolID st
 
 		return obj, obj.State, nil
 	}
+}
+
+func fetchNodeTemplate(client *managementClient.Client, id string, obj interface{}) error {
+	nodeTemplate, ok := obj.(*NodeTemplate)
+	if !ok {
+		return client.APIBaseClient.ByID(managementClient.NodeTemplateType, id, obj)
+	}
+
+	nodeTemplateMap := make(map[string]interface{})
+	err := client.APIBaseClient.ByID(managementClient.NodeTemplateType, id, &nodeTemplateMap)
+	if err != nil {
+		return err
+	}
+
+	nodeTemplateStr, err := mapInterfaceToJSON(nodeTemplateMap)
+	if err != nil {
+		return err
+	}
+
+	err = jsonToInterface(nodeTemplateStr, nodeTemplate)
+	if err != nil {
+		return err
+	}
+
+	if config, ok := nodeTemplateMap[nodeTemplate.Driver+"Config"].(map[string]interface{}); ok {
+		nodeTemplate.rawDriverConfig = config
+	}
+
+	return nil
 }

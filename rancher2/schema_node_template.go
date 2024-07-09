@@ -19,6 +19,8 @@ type NodeTemplate struct {
 	OpenstackConfig     *openstackConfig     `json:"openstackConfig,omitempty" yaml:"openstackConfig,omitempty"`
 	VmwarevsphereConfig *vmwarevsphereConfig `json:"vmwarevsphereConfig,omitempty" yaml:"vmwarevsphereConfig,omitempty"`
 	OutscaleConfig      *outscaleConfig      `json:"outscaleConfig,omitempty" yaml:"outscaleConfig,omitempty"`
+	GenericConfig       *genericConfig       `json:"-" yaml:"-"`
+	rawDriverConfig     map[string]interface{}
 }
 
 //Schemas
@@ -33,7 +35,8 @@ var allNodeTemplateDriverConfigFields = []string{
 	"opennebula_config",
 	"openstack_config",
 	"vsphere_config",
-	"outscale_config"}
+	"outscale_config",
+	"generic_config"}
 
 func getConflicts(fieldNames []string, fieldName string) []string {
 	conflicts := make([]string, 0, len(fieldNames)-1)
@@ -139,6 +142,15 @@ func nodeTemplateFields() map[string]*schema.Schema {
 		"engine_storage_driver": {
 			Type:     schema.TypeString,
 			Optional: true,
+		},
+		"generic_config": {
+			Type:          schema.TypeList,
+			MaxItems:      1,
+			Optional:      true,
+			ConflictsWith: getConflicts(allNodeTemplateDriverConfigFields, "generic_config"),
+			Elem: &schema.Resource{
+				Schema: genericConfigFields(),
+			},
 		},
 		"harvester_config": {
 			Type:          schema.TypeList,

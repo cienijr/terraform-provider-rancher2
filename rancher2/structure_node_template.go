@@ -59,7 +59,14 @@ func flattenNodeTemplate(d *schema.ResourceData, in *NodeTemplate) error {
 			return fmt.Errorf("[ERROR] Node template driver %s requires outscale_config", in.Driver)
 		}
 	default:
-		return fmt.Errorf("[ERROR] Unsupported driver on node template: %s", in.Driver)
+		if in.rawDriverConfig == nil {
+			return fmt.Errorf("[ERROR] Missing rawDriverConfig for node template driver %s", in.Driver)
+		}
+
+		in.GenericConfig = &genericConfig{
+			Driver: in.Driver,
+			Config: in.rawDriverConfig,
+		}
 	}
 
 	if len(in.AuthCertificateAuthority) > 0 {
@@ -254,6 +261,11 @@ func expandNodeTemplate(in *schema.ResourceData) *NodeTemplate {
 	if v, ok := in.Get("vsphere_config").([]interface{}); ok && len(v) > 0 {
 		obj.VmwarevsphereConfig = expandVsphereConfig(v)
 		obj.Driver = vmwarevsphereConfigDriver
+	}
+
+	if v, ok := in.Get("generic_config").([]interface{}); ok && len(v) > 0 {
+		obj.GenericConfig = expandGenericConfig(v)
+		obj.Driver = obj.GenericConfig.Driver
 	}
 
 	if v, ok := in.Get("annotations").(map[string]interface{}); ok && len(v) > 0 {
